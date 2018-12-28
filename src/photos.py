@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
+import os
 import sys
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 class Photos():
     """
@@ -14,7 +15,7 @@ class Photos():
         self.h_box = kwargs.get('h_box', 1080)
         self.output_image = kwargs.get('out', None)
         self.imgs = imgs
-        self.pil_image = self.merge_photos(out=self.output_image)
+        # self.pil_image = self.merge_photos(out=self.output_image)
 
     # def get_merged_photos(self):
     #     return self.merge_photos(out=self.output_image)
@@ -34,7 +35,9 @@ class Photos():
         # 计算resize的宽高
         width = int(raw_width * factor)  
         height = int(raw_height * factor)  
-        return pil_image.resize((width, height), Image.ANTIALIAS)  
+        pil_image_resized = pil_image.resize((width, height), Image.ANTIALIAS)  # resize
+        pil_image_texted = self.add_text(image, pil_image_resized)
+        return pil_image_texted
 
     def merge_photos(self, out=None):
         """ 
@@ -78,6 +81,21 @@ class Photos():
         if out:
             photo.save(out)    
         return photo
+
+    def add_text(self, image_name, pil_image):
+        # 字体
+        font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf', 24)
+        # 文本
+        text = os.path.basename(image_name)
+        
+        image_draw = ImageDraw.Draw(pil_image)
+        image_draw.text((30,20), text, font=font, fill='#008844')
+        return pil_image
+
+    def destroy(self):
+        map(lambda x:x.close, self.pil_images)  # 删除image
+        del self.pil_images[:]
+        del self.pil_images
 
 if __name__ == "__main__":
     a = Photos('sample/0001.jpg', 'sample/0001.jpg', 'sample/0001.jpg', 'sample/0001.jpg',out='0005.jpg')

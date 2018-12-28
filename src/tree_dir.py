@@ -18,7 +18,7 @@ from idlelib.config import idleConf
 
 from PIL import Image, ImageTk
 
-from merge_img import Photos
+from photos import Photos
 
 
 
@@ -45,7 +45,7 @@ class SubTreeNode(tree.TreeNode):
     """
     path_list = []
     img_type = 'jpg'    
-
+    photos = Photos()
     def __init__(self, dir_canvas, parent, item):
         tree.TreeNode.__init__(self, dir_canvas, parent, item)
 
@@ -82,12 +82,23 @@ class SubTreeNode(tree.TreeNode):
         if not file_list:
             return
         # merge image
-        photo = Photos(*file_list)   
-        merged_photo = photo.pil_image 
+        # 修复内存泄露的bug，由于没有清除之前打开的图片，第二次打开的图片仍然为之前的图片
+        try:
+            self.photos.destroy()
+        except:
+            pass
+        self.photos.imgs = file_list  
+        merged_photo = self.photos.merge_photos()
 
         # show image
-        window.canvas_image.delete(ALL)
+        try:
+            window.destroy()
+        except:
+            import traceback
+            traceback.print_exc()
+
         window.show_img_in_canvas(merged_photo)
+        
         
     def drawtext(self):
         textx = self.x+20-1
@@ -182,7 +193,6 @@ class WholeWindow():
 
     def build_img_canvas(self):
         self.box_width = self.screen_width - self.tree_width
-        print(self.box_width)
         self.img_frame = tk.Frame(self.master, width=self.box_width, height=self.screen_height, background='red')
         self.img_frame.grid(row=0, column=1)
         hbar = AutoScrollbar(self.img_frame, orient=tk.HORIZONTAL)
@@ -196,7 +206,17 @@ class WholeWindow():
         self.canvas_image.update()  # wait till canvas is created
         hbar.configure(command=self.__scroll_x)  # bind scrollbars to the canvas
         vbar.configure(command=self.__scroll_y)
-        
+        # Bind events to the Canvas
+        self.canvas_image.bind('<Configure>', lambda event: self.__show_image())  # canvas is resized
+        self.canvas_image.bind('<ButtonPress-1>', self.__move_from)  # remember canvas position
+        self.canvas_image.bind('<B1-Motion>',     self.__move_to)  # move canvas to the new position
+        self.canvas_image.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
+        self.canvas_image.bind('<Button-5>',   self.__wheel)  # zoom for Linux, wheel scroll down
+        self.canvas_image.bind('<Button-4>',   self.__wheel)  # zoom for Linux, wheel scroll up
+         # Handle keystrokes in idle mode, because program slows down on a weak computers,
+        # when too many key stroke events in the same time
+        self.canvas_image.bind('<Key>', lambda event: self.canvas_image.after_idle(self.__keystroke, event))
+
     def get_screen_size(self, window):
         return window.winfo_screenwidth(),window.winfo_screenheight()
     
@@ -216,17 +236,8 @@ class WholeWindow():
         self.__filter = Image.ANTIALIAS  # could be: NEAREST, BILINEAR, BICUBIC and ANTIALIAS
         self.__previous_state = 0  # previous state of the keyboard
         self.pil_image = pil_image
-        # Bind events to the Canvas
-        self.canvas_image.bind('<Configure>', lambda event: self.__show_image())  # canvas is resized
-        self.canvas_image.bind('<ButtonPress-1>', self.__move_from)  # remember canvas position
-        self.canvas_image.bind('<B1-Motion>',     self.__move_to)  # move canvas to the new position
-        self.canvas_image.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
-        self.canvas_image.bind('<Button-5>',   self.__wheel)  # zoom for Linux, wheel scroll down
-        self.canvas_image.bind('<Button-4>',   self.__wheel)  # zoom for Linux, wheel scroll up
-        # Handle keystrokes in idle mode, because program slows down on a weak computers,
-        # when too many key stroke events in the same time
-        self.canvas_image.bind('<Key>', lambda event: self.canvas_image.after_idle(self.__keystroke, event))
-
+        
+    
         with warnings.catch_warnings():  # suppress DecompressionBombWarning
             warnings.simplefilter('ignore')
             self.__image = self.pil_image  # open image, but down't load it
@@ -249,9 +260,6 @@ class WholeWindow():
         self.container = self.canvas_image.create_rectangle((0, 0, self.imwidth, self.imheight), width=0)
         self.__show_image()  # show image on the canvas
         self.canvas_image.focus_set()  # set focus on the canvas
-
-
-    
 
     def __scroll_x(self, *args, **kwargs):
         """ Scroll canvas horizontally and redraw the image """
@@ -333,11 +341,15 @@ class WholeWindow():
 
     def destroy(self):
         """ ImageFrame destructor """
+        del self.canvas_image.imagetk
+        # # print(self.imageid)
+        self.canvas_image.delete(self.imageid)  # 清除画布上的图片
         map(lambda i: i.close, self.__pyramid)  # close all pyramid images
         del self.__pyramid[:]  # delete pyramid list
         del self.__pyramid  # delete pyramid variable
-        self.canvas_image.destroy()
-        self.img_frame.destroy()
+        
+        # self.canvas_image.destroy()
+        # self.img_frame.destroy()
     
     def __show_image(self):
         """ Show image on the Canvas. Implements correct image zoom almost like in Google Maps """
@@ -370,19 +382,20 @@ class WholeWindow():
                                     int(x2 / self.__scale), int(y2 / self.__scale)))
             #
             imagetk = ImageTk.PhotoImage(image.resize((int(x2 - x1), int(y2 - y1)), self.__filter))
-            imageid = self.canvas_image.create_image(max(box_canvas[0], box_img_int[0]),
+            self.imageid = self.canvas_image.create_image(max(box_canvas[0], box_img_int[0]),
                                                max(box_canvas[1], box_img_int[1]),
                                                anchor='nw', image=imagetk)
-            self.canvas_image.lower(imageid)  # set image into background
+            self.canvas_image.lower(self.imageid)  # set image into background
             self.canvas_image.imagetk = imagetk  # keep an extra reference to prevent garbage-collection
+            
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     window = WholeWindow(root)
+    
     # window.build_tree()
     # photo = Photos("sample/0001.jpg")
     # window.show_img_in_canvas(photo.pil_image)
-    # window.destroy()
     root.mainloop()
 
