@@ -10,6 +10,7 @@
 import os
 import math
 import warnings
+import numpy as np
 import tkinter as tk
 from tkinter import *
 from tkinter import ttk
@@ -96,7 +97,7 @@ class SubTreeNode(tree.TreeNode):
         except:
             import traceback
             traceback.print_exc()
-
+        window.build_img_canvas()
         window.show_img_in_canvas(merged_photo)
         
         
@@ -153,14 +154,13 @@ class AutoScrollbar(ttk.Scrollbar):
         raise tk.TclError('Cannot use place with the widget ' + self.__class__.__name__)
 
 
-
-
 class WholeWindow():
+    move_gap = [0, 0]
     def __init__(self, master):
         self.master = master    # 父窗口root 
-
         self.screen_width, self.screen_height = self.get_screen_size(self.master)
-        self.center_window(self.screen_width, self.screen_height)
+        self.center_window(self.screen_width-50, self.screen_height-50)
+        self.master.resizable(width=False, height=False)
         self.build_tree_canvas()
         self.build_tree()
         self.build_img_canvas()
@@ -183,6 +183,7 @@ class WholeWindow():
         self.tree_canvas.config(width=self.tree_width,height=self.tree_height)
         self.tree_canvas.config(xscrollcommand=hbar.set, yscrollcommand=vbar.set)
         self.tree_canvas.pack(side=tk.LEFT,expand=True,fill=tk.BOTH)
+
 
 
     def build_tree(self):
@@ -208,14 +209,15 @@ class WholeWindow():
         vbar.configure(command=self.__scroll_y)
         # Bind events to the Canvas
         self.canvas_image.bind('<Configure>', lambda event: self.__show_image())  # canvas is resized
-        self.canvas_image.bind('<ButtonPress-1>', self.__move_from)  # remember canvas position
-        self.canvas_image.bind('<B1-Motion>',     self.__move_to)  # move canvas to the new position
+        self.canvas_image.bind('<Control-ButtonPress-1>', self.__move_from)  # remember canvas position
+        self.canvas_image.bind('<Control-B1-Motion>',     self.__move_to)  # move canvas to the new position
+        self.canvas_image.bind('<Control-B1-ButtonRelease>', self.get_move_gap)
         self.canvas_image.bind('<MouseWheel>', self.__wheel)  # zoom for Windows and MacOS, but not Linux
         self.canvas_image.bind('<Button-5>',   self.__wheel)  # zoom for Linux, wheel scroll down
         self.canvas_image.bind('<Button-4>',   self.__wheel)  # zoom for Linux, wheel scroll up
          # Handle keystrokes in idle mode, because program slows down on a weak computers,
         # when too many key stroke events in the same time
-        self.canvas_image.bind('<Key>', lambda event: self.canvas_image.after_idle(self.__keystroke, event))
+        # self.canvas_image.bind('<Key>', lambda event: self.canvas_image.after_idle(self.__keystroke, event))
 
     def get_screen_size(self, window):
         return window.winfo_screenwidth(),window.winfo_screenheight()
@@ -274,11 +276,21 @@ class WholeWindow():
     def __move_from(self, event):
         """ Remember previous coordinates for scrolling with the mouse """
         self.canvas_image.scan_mark(event.x, event.y)
+        self.from_coord = (event.x, event.y)
 
     def __move_to(self, event):
         """ Drag (move) canvas to the new position """
         self.canvas_image.scan_dragto(event.x, event.y, gain=1)
+        self.to_coord = (event.x, event.y)
         self.__show_image()  # zoom tile and show it on the canvas
+
+    def get_move_gap(self, event):
+        """ B1 release时获取移动的距离 """
+        try:
+            self.move_gap = list(np.array(self.to_coord) - np.array(self.from_coord) + np.array(self.move_gap))
+        except:
+            self.move_gap = [0, 0]
+
 
     def outside(self, x, y):
         """ Checks if the point (x,y) is outside the image area """
@@ -314,6 +326,7 @@ class WholeWindow():
         self.redraw_figures()  # method for child classes
         self.__show_image()
 
+
     def __keystroke(self, event):
         """ Scrolling with the keyboard.
             Independent from the language of the keyboard, CapsLock, <Ctrl>+<key>, etc. """
@@ -341,14 +354,17 @@ class WholeWindow():
 
     def destroy(self):
         """ ImageFrame destructor """
+        del self.move_gap
         del self.canvas_image.imagetk
         # # print(self.imageid)
+        self.pil_image.close()
+        del self.pil_image
         self.canvas_image.delete(self.imageid)  # 清除画布上的图片
         map(lambda i: i.close, self.__pyramid)  # close all pyramid images
         del self.__pyramid[:]  # delete pyramid list
         del self.__pyramid  # delete pyramid variable
-        
-        # self.canvas_image.destroy()
+        self.canvas_image.delete(tk.ALL)
+        self.canvas_image.destroy()
         # self.img_frame.destroy()
     
     def __show_image(self):
@@ -358,18 +374,19 @@ class WholeWindow():
                       self.canvas_image.canvasy(0),
                       self.canvas_image.canvasx(self.canvas_image.winfo_width()),
                       self.canvas_image.canvasy(self.canvas_image.winfo_height()))
-        box_img_int = tuple(map(int, box_image))  # convert to integer or it will not work properly
+        self.box_img_int = tuple(map(int, box_image))  # convert to integer or it will not work properly
+        
         # Get scroll region box
-        box_scroll = [min(box_img_int[0], box_canvas[0]), min(box_img_int[1], box_canvas[1]),
-                      max(box_img_int[2], box_canvas[2]), max(box_img_int[3], box_canvas[3])]
+        box_scroll = [min(self.box_img_int[0], box_canvas[0]), min(self.box_img_int[1], box_canvas[1]),
+                      max(self.box_img_int[2], box_canvas[2]), max(self.box_img_int[3], box_canvas[3])]
         # Horizontal part of the image is in the visible area
         if  box_scroll[0] == box_canvas[0] and box_scroll[2] == box_canvas[2]:
-            box_scroll[0]  = box_img_int[0]
-            box_scroll[2]  = box_img_int[2]
+            box_scroll[0]  = self.box_img_int[0]
+            box_scroll[2]  = self.box_img_int[2]
         # Vertical part of the image is in the visible area
         if  box_scroll[1] == box_canvas[1] and box_scroll[3] == box_canvas[3]:
-            box_scroll[1]  = box_img_int[1]
-            box_scroll[3]  = box_img_int[3]
+            box_scroll[1]  = self.box_img_int[1]
+            box_scroll[3]  = self.box_img_int[3]
         # Convert scroll region to tuple and to integer
         self.canvas_image.configure(scrollregion=tuple(map(int, box_scroll)))  # set scroll region
         x1 = max(box_canvas[0] - box_image[0], 0)  # get coordinates (x1,y1,x2,y2) of the image tile
@@ -382,8 +399,8 @@ class WholeWindow():
                                     int(x2 / self.__scale), int(y2 / self.__scale)))
             #
             imagetk = ImageTk.PhotoImage(image.resize((int(x2 - x1), int(y2 - y1)), self.__filter))
-            self.imageid = self.canvas_image.create_image(max(box_canvas[0], box_img_int[0]),
-                                               max(box_canvas[1], box_img_int[1]),
+            self.imageid = self.canvas_image.create_image(max(box_canvas[0], self.box_img_int[0]),
+                                               max(box_canvas[1], self.box_img_int[1]),
                                                anchor='nw', image=imagetk)
             self.canvas_image.lower(self.imageid)  # set image into background
             self.canvas_image.imagetk = imagetk  # keep an extra reference to prevent garbage-collection
@@ -391,11 +408,18 @@ class WholeWindow():
 
 
 if __name__ == "__main__":
+    from function import Function
+
     root = tk.Tk()
-    window = WholeWindow(root)
     
+    window = WholeWindow(root)
+    func = Function(root, obj_window=window)
+
+    
+
     # window.build_tree()
     # photo = Photos("sample/0001.jpg")
     # window.show_img_in_canvas(photo.pil_image)
     root.mainloop()
+
 

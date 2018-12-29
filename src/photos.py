@@ -1,3 +1,12 @@
+#!/usr/bin/env python3
+'''
+@File    :   photos.py
+@Time    :   2018/12/26 17:04:36
+@Author  :   yangshifu
+@Version :   1.0
+@Contact :   yangshifu@sensetime.com
+@Desc    :   None
+'''
 # -*- coding: utf-8 -*-
 import os
 import sys
